@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import requests
 from pathlib import Path
 
 st.set_page_config(
@@ -107,8 +108,49 @@ st.markdown("""
     color: #9ca3af;
     font-size: 13px;
 }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    border-radius: 18px;
+    overflow: hidden;
+}
+
+thead tr {
+    background: rgba(255,255,255,0.08);
+}
+
+th {
+    text-align: left !important;
+    padding: 12px !important;
+    font-weight: 700 !important;
+}
+
+td {
+    padding: 11px !important;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+
+a {
+    text-decoration: none;
+    font-weight: 700;
+}
 </style>
 """, unsafe_allow_html=True)
+
+
+@st.cache_data(ttl=86400)
+def get_cny_to_sek_rate():
+    try:
+        url = "https://api.frankfurter.app/latest?from=CNY&to=SEK"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        rate = float(data["rates"]["SEK"])
+        date = data.get("date", "latest")
+        return rate, date
+    except Exception:
+        return 1.45, "fallback"
 
 
 @st.cache_data
@@ -192,24 +234,18 @@ def make_clickable_link(url, label):
 
 
 df = load_data()
+cny_to_sek, rate_date = get_cny_to_sek_rate()
+df["price_sek"] = df["price_yuan"] * cny_to_sek
 
-st.markdown("""
+st.markdown(f"""
 <div class="hero">
     <h1>📦 Clothes Tracker</h1>
     <p>Track clothing orders, location, weight, QC links and total cost.</p>
+    <p class="small-muted">CNY → SEK rate: {cny_to_sek:.4f} · Date: {rate_date}</p>
 </div>
 """, unsafe_allow_html=True)
 
 st.sidebar.header("Filters")
-
-cny_to_sek = st.sidebar.number_input(
-    "CNY → SEK rate",
-    min_value=0.0,
-    value=1.45,
-    step=0.01
-)
-
-df["price_sek"] = df["price_yuan"] * cny_to_sek
 
 search = st.sidebar.text_input("Search", "")
 
@@ -345,31 +381,29 @@ st.divider()
 st.subheader("Items")
 
 display_df = filtered.copy()
-display_df["status"] = display_df["status"].apply(status_badge)
-display_df["yupoo"] = display_df["yupoo"].apply(lambda x: make_clickable_link(x, "Yupoo"))
-display_df["qc"] = display_df["qc"].apply(lambda x: make_clickable_link(x, "QC"))
 
-display_df["price_yuan"] = display_df["price_yuan"].apply(
-    lambda x: f"¥{x:.0f}" if pd.notna(x) else ""
-)
-display_df["price_sek"] = display_df["price_sek"].apply(
-    lambda x: f"{x:.0f} kr" if pd.notna(x) else ""
-)
-display_df["weight_g"] = display_df["weight_g"].apply(
-    lambda x: f"{x:.0f} g" if pd.notna(x) else ""
-)
+display_df["Status"] = display_df["status"].apply(status_badge)
+display_df["Brand"] = display_df["brand"]
+display_df["Type"] = display_df["type"]
+display_df["Size"] = display_df["size"]
+display_df["Colour"] = display_df["colour"]
+display_df["Price ¥"] = display_df["price_yuan"].apply(lambda x: f"¥{x:.0f}" if pd.notna(x) else "")
+display_df["Price SEK"] = display_df["price_sek"].apply(lambda x: f"{x:.0f} kr" if pd.notna(x) else "")
+display_df["Weight"] = display_df["weight_g"].apply(lambda x: f"{x:.0f} g" if pd.notna(x) else "")
+display_df["Yupoo"] = display_df["yupoo"].apply(lambda x: make_clickable_link(x, "Yupoo"))
+display_df["QC"] = display_df["qc"].apply(lambda x: make_clickable_link(x, "QC"))
 
 show_cols = [
-    "status",
-    "brand",
-    "type",
-    "size",
-    "colour",
-    "price_yuan",
-    "price_sek",
-    "weight_g",
-    "yupoo",
-    "qc",
+    "Status",
+    "Brand",
+    "Type",
+    "Size",
+    "Colour",
+    "Price ¥",
+    "Price SEK",
+    "Weight",
+    "Yupoo",
+    "QC",
 ]
 
 st.markdown(
@@ -387,14 +421,14 @@ left, right = st.columns(2)
 with left:
     st.subheader("Items by brand")
     brand_count = filtered["brand"].value_counts().reset_index()
-    brand_count.columns = ["brand", "count"]
+    brand_count.columns = ["Brand", "Count"]
 
     if not brand_count.empty:
         fig = px.bar(
             brand_count,
-            x="brand",
-            y="count",
-            text="count",
+            x="Brand",
+            y="Count",
+            text="Count",
         )
         fig.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
@@ -414,11 +448,11 @@ with right:
     )
 
     if not status_count.empty:
-        status_count["status_label"] = status_count["status"].map(STATUS_LABELS).fillna(status_count["status"])
+        status_count["Status"] = status_count["status"].map(STATUS_LABELS).fillna(status_count["status"])
 
         fig = px.pie(
             status_count,
-            names="status_label",
+            names="Status",
             values="count",
             color="status",
             color_discrete_map=STATUS_COLORS,
@@ -443,17 +477,16 @@ weight_by_status = (
 )
 
 if not weight_by_status.empty:
-    weight_by_status["status_label"] = weight_by_status["status"].map(STATUS_LABELS).fillna(weight_by_status["status"])
+    weight_by_status["Status"] = weight_by_status["status"].map(STATUS_LABELS).fillna(weight_by_status["status"])
 
     fig_weight = px.bar(
         weight_by_status,
-        x="status_label",
+        x="Status",
         y="weight_g",
         text="weight_g",
         color="status",
         color_discrete_map=STATUS_COLORS,
         labels={
-            "status_label": "Status / Location",
             "weight_g": "Weight g",
         },
     )
