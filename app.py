@@ -11,7 +11,100 @@ st.set_page_config(
 
 DATA_PATH = Path("data/clothes.xlsx")
 
-st.title("📦 Clothes Tracker")
+STATUS_ORDER = [
+    "purchased",
+    "shipped locally",
+    "warehouse",
+    "shipped internationally",
+    "delivered",
+]
+
+STATUS_COLORS = {
+    "purchased": "#ef4444",
+    "shipped locally": "#f97316",
+    "warehouse": "#eab308",
+    "shipped internationally": "#3b82f6",
+    "delivered": "#22c55e",
+}
+
+STATUS_LABELS = {
+    "purchased": "Purchased",
+    "shipped locally": "Shipped locally",
+    "warehouse": "Warehouse",
+    "shipped internationally": "Shipped internationally",
+    "delivered": "Delivered",
+}
+
+st.markdown("""
+<style>
+.main {
+    background: #0f1117;
+}
+
+.block-container {
+    padding-top: 2rem;
+}
+
+.hero {
+    padding: 26px 30px;
+    border-radius: 26px;
+    background: linear-gradient(135deg, #171923 0%, #222736 100%);
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 24px;
+}
+
+.hero h1 {
+    font-size: 42px;
+    margin: 0;
+}
+
+.hero p {
+    color: #a1a1aa;
+    font-size: 16px;
+    margin-top: 8px;
+}
+
+.metric-card {
+    padding: 22px;
+    border-radius: 22px;
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.08);
+}
+
+.metric-label {
+    color: #a1a1aa;
+    font-size: 14px;
+}
+
+.metric-value {
+    font-size: 30px;
+    font-weight: 700;
+    margin-top: 4px;
+}
+
+.status-pill {
+    display: inline-block;
+    padding: 6px 11px;
+    border-radius: 999px;
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.item-card {
+    padding: 18px;
+    border-radius: 22px;
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 14px;
+}
+
+.small-muted {
+    color: #a1a1aa;
+    font-size: 13px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 
 @st.cache_data
@@ -23,8 +116,7 @@ def load_data():
     df = pd.read_excel(DATA_PATH)
 
     df.columns = (
-        df.columns
-        .astype(str)
+        df.columns.astype(str)
         .str.strip()
         .str.lower()
         .str.replace(" ", "_")
@@ -38,61 +130,59 @@ def load_data():
         "weight_in_wh": "weight_g",
     })
 
-    if "price_yuan" in df.columns:
-        df["price_yuan"] = (
-            df["price_yuan"]
-            .astype(str)
-            .str.replace("¥", "", regex=False)
-            .str.replace(",", ".", regex=False)
-            .str.replace("nan", "", regex=False)
-            .str.strip()
-        )
-        df["price_yuan"] = pd.to_numeric(df["price_yuan"], errors="coerce")
+    for col in [
+        "status", "brand", "type", "size", "colour",
+        "price_yuan", "weight_g", "yupoo", "qc", "pic"
+    ]:
+        if col not in df.columns:
+            df[col] = ""
 
-    if "weight_g" in df.columns:
-        df["weight_g"] = (
-            df["weight_g"]
-            .astype(str)
-            .str.replace("g", "", regex=False)
-            .str.replace(" ", "", regex=False)
-            .str.replace("nan", "", regex=False)
-            .str.strip()
-        )
-        df["weight_g"] = pd.to_numeric(df["weight_g"], errors="coerce")
+    df["status"] = df["status"].astype(str).str.strip().str.lower()
+
+    df["status"] = df["status"].replace({
+        "shipped": "shipped internationally",
+        "international": "shipped internationally",
+        "shipped international": "shipped internationally",
+        "local": "shipped locally",
+    })
+
+    df["price_yuan"] = (
+        df["price_yuan"]
+        .astype(str)
+        .str.replace("¥", "", regex=False)
+        .str.replace(",", ".", regex=False)
+        .str.replace("nan", "", regex=False)
+        .str.strip()
+    )
+    df["price_yuan"] = pd.to_numeric(df["price_yuan"], errors="coerce")
+
+    df["weight_g"] = (
+        df["weight_g"]
+        .astype(str)
+        .str.replace("g", "", regex=False)
+        .str.replace(" ", "", regex=False)
+        .str.replace("nan", "", regex=False)
+        .str.strip()
+    )
+    df["weight_g"] = pd.to_numeric(df["weight_g"], errors="coerce")
+
+    df["status_rank"] = df["status"].apply(
+        lambda x: STATUS_ORDER.index(x) if x in STATUS_ORDER else 999
+    )
+
+    df = df.sort_values(["status_rank", "brand", "type"]).reset_index(drop=True)
 
     return df
 
 
 df = load_data()
 
-for col in [
-    "status",
-    "brand",
-    "type",
-    "size",
-    "colour",
-    "price_yuan",
-    "weight_g",
-    "yupoo",
-    "qc",
-    "pic",
-]:
-    if col not in df.columns:
-        df[col] = ""
-
-df["status"] = df["status"].astype(str).str.strip().str.lower()
-
-status_map = {
-    "shipped": "shipped internationally",
-    "shipped internationally": "shipped internationally",
-    "shipped locally": "shipped locally",
-    "warehouse": "warehouse",
-    "purchased": "purchased",
-    "delivered": "delivered",
-    "returned": "returned",
-}
-
-df["status"] = df["status"].replace(status_map)
+st.markdown("""
+<div class="hero">
+    <h1>📦 Clothes Tracker</h1>
+    <p>Orderöversikt för plagg, vikt, status, QC och kostnad.</p>
+</div>
+""", unsafe_allow_html=True)
 
 st.sidebar.header("Filter")
 
@@ -107,7 +197,10 @@ df["price_sek"] = df["price_yuan"] * cny_to_sek
 
 search = st.sidebar.text_input("Sök", "")
 
-status_options = sorted(df["status"].dropna().astype(str).unique())
+status_options = [s for s in STATUS_ORDER if s in df["status"].unique()]
+extra_statuses = sorted([s for s in df["status"].dropna().unique() if s not in STATUS_ORDER])
+status_options += extra_statuses
+
 brand_options = sorted(df["brand"].dropna().astype(str).unique())
 type_options = sorted(df["type"].dropna().astype(str).unique())
 
@@ -144,43 +237,94 @@ if search:
         )
     ]
 
-col1, col2, col3, col4, col5 = st.columns(5)
+filtered = filtered.sort_values(["status_rank", "brand", "type"]).reset_index(drop=True)
 
-col1.metric("Items", len(filtered))
-col2.metric("Total yuan", f"¥{filtered['price_yuan'].sum(skipna=True):,.0f}")
-col3.metric("Total SEK", f"{filtered['price_sek'].sum(skipna=True):,.0f} kr")
-col4.metric("Total weight", f"{filtered['weight_g'].sum(skipna=True) / 1000:.2f} kg")
-col5.metric("Brands", filtered["brand"].nunique())
+c1, c2, c3, c4, c5 = st.columns(5)
+
+with c1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Items</div>
+        <div class="metric-value">{len(filtered)}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Total yuan</div>
+        <div class="metric-value">¥{filtered["price_yuan"].sum(skipna=True):,.0f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c3:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Total SEK</div>
+        <div class="metric-value">{filtered["price_sek"].sum(skipna=True):,.0f} kr</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c4:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Total weight</div>
+        <div class="metric-value">{filtered["weight_g"].sum(skipna=True) / 1000:.2f} kg</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c5:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Brands</div>
+        <div class="metric-value">{filtered["brand"].nunique()}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.divider()
 
-st.subheader("Vikt per status / location")
+st.subheader("Status / Location")
 
-weight_by_status = (
-    filtered
-    .groupby("status", dropna=False)["weight_g"]
-    .sum()
+status_summary = (
+    filtered.groupby("status", dropna=False)
+    .agg(
+        items=("status", "count"),
+        weight_g=("weight_g", "sum"),
+        value_yuan=("price_yuan", "sum"),
+        value_sek=("price_sek", "sum"),
+        rank=("status_rank", "min"),
+    )
     .reset_index()
-    .sort_values("weight_g", ascending=False)
+    .sort_values("rank")
 )
 
-if weight_by_status.empty or weight_by_status["weight_g"].sum(skipna=True) == 0:
-    st.info("Ingen viktdata att visa.")
-else:
-    weight_cols = st.columns(len(weight_by_status))
+cols = st.columns(max(1, len(status_summary)))
 
-    for i, row in weight_by_status.iterrows():
-        weight_cols[list(weight_by_status.index).index(i)].metric(
-            row["status"],
-            f"{row['weight_g'] / 1000:.2f} kg"
-        )
+for i, row in status_summary.iterrows():
+    status = row["status"]
+    color = STATUS_COLORS.get(status, "#71717a")
+    label = STATUS_LABELS.get(status, status.title())
+
+    with cols[list(status_summary.index).index(i)]:
+        st.markdown(f"""
+        <div class="item-card">
+            <span class="status-pill" style="background:{color};">{label}</span>
+            <div style="height:12px;"></div>
+            <div><b>{int(row["items"])}</b> items</div>
+            <div class="small-muted">{row["weight_g"] / 1000:.2f} kg</div>
+            <div class="small-muted">¥{row["value_yuan"]:,.0f} / {row["value_sek"]:,.0f} kr</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 st.divider()
 
 st.subheader("Alla plagg")
 
+display_df = filtered.copy()
+display_df["status_label"] = display_df["status"].map(STATUS_LABELS).fillna(display_df["status"])
+
 show_cols = [
-    "status",
+    "status_label",
     "brand",
     "type",
     "size",
@@ -193,11 +337,11 @@ show_cols = [
 ]
 
 st.dataframe(
-    filtered[show_cols],
+    display_df[show_cols],
     use_container_width=True,
     hide_index=True,
     column_config={
-        "status": "Status / Location",
+        "status_label": "Status / Location",
         "brand": "Brand",
         "type": "Type",
         "size": "Size",
@@ -216,7 +360,6 @@ left, right = st.columns(2)
 
 with left:
     st.subheader("Plagg per märke")
-
     brand_count = filtered["brand"].value_counts().reset_index()
     brand_count.columns = ["brand", "count"]
 
@@ -225,23 +368,38 @@ with left:
             brand_count,
             x="brand",
             y="count",
-            text="count"
+            text="count",
+        )
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Ingen data att visa.")
 
 with right:
-    st.subheader("Status / Location")
-
-    status_count = filtered["status"].value_counts().reset_index()
-    status_count.columns = ["status", "count"]
+    st.subheader("Statusfördelning")
+    status_count = (
+        filtered.groupby(["status", "status_rank"])
+        .size()
+        .reset_index(name="count")
+        .sort_values("status_rank")
+    )
 
     if not status_count.empty:
+        status_count["status_label"] = status_count["status"].map(STATUS_LABELS).fillna(status_count["status"])
+
         fig = px.pie(
             status_count,
-            names="status",
-            values="count"
+            names="status_label",
+            values="count",
+            color="status",
+            color_discrete_map=STATUS_COLORS,
+        )
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
@@ -251,16 +409,33 @@ st.divider()
 
 st.subheader("Viktfördelning")
 
+weight_by_status = (
+    filtered.groupby(["status", "status_rank"], dropna=False)["weight_g"]
+    .sum()
+    .reset_index()
+    .sort_values("status_rank")
+)
+
 if not weight_by_status.empty:
+    weight_by_status["status_label"] = weight_by_status["status"].map(STATUS_LABELS).fillna(weight_by_status["status"])
+
     fig_weight = px.bar(
         weight_by_status,
-        x="status",
+        x="status_label",
         y="weight_g",
         text="weight_g",
+        color="status",
+        color_discrete_map=STATUS_COLORS,
         labels={
-            "status": "Status / Location",
-            "weight_g": "Weight g"
-        }
+            "status_label": "Status / Location",
+            "weight_g": "Weight g",
+        },
+    )
+    fig_weight.update_traces(texttemplate="%{text:.0f} g", textposition="outside")
+    fig_weight.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
     )
     st.plotly_chart(fig_weight, use_container_width=True)
 
@@ -271,8 +446,6 @@ st.subheader("Detaljer")
 if filtered.empty:
     st.warning("Inga plagg matchar filtret.")
 else:
-    filtered = filtered.reset_index(drop=True)
-
     labels = (
         filtered["brand"].astype(str)
         + " – "
@@ -280,23 +453,29 @@ else:
         + " – "
         + filtered["colour"].astype(str)
         + " – "
-        + filtered["status"].astype(str)
+        + filtered["status"].map(STATUS_LABELS).fillna(filtered["status"]).astype(str)
     )
 
     selected_label = st.selectbox("Välj plagg", labels)
     selected_index = labels[labels == selected_label].index[0]
     item = filtered.loc[selected_index]
 
-    c1, c2 = st.columns(2)
+    status = item["status"]
+    color = STATUS_COLORS.get(status, "#71717a")
+    label = STATUS_LABELS.get(status, status.title())
 
-    with c1:
-        st.write(f"**Status / Location:** {item['status']}")
-        st.write(f"**Brand:** {item['brand']}")
-        st.write(f"**Type:** {item['type']}")
-        st.write(f"**Size:** {item['size']}")
-        st.write(f"**Colour:** {item['colour']}")
+    d1, d2 = st.columns([1.2, 1])
 
-    with c2:
+    with d1:
+        st.markdown(f"""
+        <div class="item-card">
+            <span class="status-pill" style="background:{color};">{label}</span>
+            <h3 style="margin-top:16px;">{item["brand"]} – {item["type"]}</h3>
+            <div class="small-muted">Size: {item["size"]} · Colour: {item["colour"]}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with d2:
         price_yuan = item["price_yuan"]
         price_sek = item["price_sek"]
         weight = item["weight_g"]
