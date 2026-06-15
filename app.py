@@ -37,29 +37,25 @@ STATUS_LABELS = {
 
 st.markdown("""
 <style>
-.main {
-    background: #0f1117;
-}
-
 .block-container {
     padding-top: 2rem;
 }
 
 .hero {
-    padding: 26px 30px;
-    border-radius: 26px;
-    background: linear-gradient(135deg, #171923 0%, #222736 100%);
+    padding: 28px 32px;
+    border-radius: 28px;
+    background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
     border: 1px solid rgba(255,255,255,0.08);
     margin-bottom: 24px;
 }
 
 .hero h1 {
-    font-size: 42px;
+    font-size: 44px;
     margin: 0;
 }
 
 .hero p {
-    color: #a1a1aa;
+    color: #d1d5db;
     font-size: 16px;
     margin-top: 8px;
 }
@@ -72,7 +68,7 @@ st.markdown("""
 }
 
 .metric-label {
-    color: #a1a1aa;
+    color: #9ca3af;
     font-size: 14px;
 }
 
@@ -84,11 +80,19 @@ st.markdown("""
 
 .status-pill {
     display: inline-block;
-    padding: 6px 11px;
+    padding: 6px 12px;
     border-radius: 999px;
     color: white;
     font-size: 13px;
     font-weight: 700;
+}
+
+.status-button-card {
+    padding: 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.045);
+    margin-bottom: 10px;
 }
 
 .item-card {
@@ -100,7 +104,7 @@ st.markdown("""
 }
 
 .small-muted {
-    color: #a1a1aa;
+    color: #9ca3af;
     font-size: 13px;
 }
 </style>
@@ -110,7 +114,7 @@ st.markdown("""
 @st.cache_data
 def load_data():
     if not DATA_PATH.exists():
-        st.error("Hittar inte filen: data/clothes.xlsx")
+        st.error("Could not find file: data/clothes.xlsx")
         st.stop()
 
     df = pd.read_excel(DATA_PATH)
@@ -175,19 +179,31 @@ def load_data():
     return df
 
 
+def status_badge(status):
+    color = STATUS_COLORS.get(status, "#71717a")
+    label = STATUS_LABELS.get(status, str(status).title())
+    return f'<span class="status-pill" style="background:{color};">{label}</span>'
+
+
+def make_clickable_link(url, label):
+    if isinstance(url, str) and url.startswith("http"):
+        return f'<a href="{url}" target="_blank">{label}</a>'
+    return ""
+
+
 df = load_data()
 
 st.markdown("""
 <div class="hero">
     <h1>📦 Clothes Tracker</h1>
-    <p>Orderöversikt för plagg, vikt, status, QC och kostnad.</p>
+    <p>Track clothing orders, location, weight, QC links and total cost.</p>
 </div>
 """, unsafe_allow_html=True)
 
-st.sidebar.header("Filter")
+st.sidebar.header("Filters")
 
 cny_to_sek = st.sidebar.number_input(
-    "CNY → SEK kurs",
+    "CNY → SEK rate",
     min_value=0.0,
     value=1.45,
     step=0.01
@@ -195,20 +211,28 @@ cny_to_sek = st.sidebar.number_input(
 
 df["price_sek"] = df["price_yuan"] * cny_to_sek
 
-search = st.sidebar.text_input("Sök", "")
+search = st.sidebar.text_input("Search", "")
 
 status_options = [s for s in STATUS_ORDER if s in df["status"].unique()]
 extra_statuses = sorted([s for s in df["status"].dropna().unique() if s not in STATUS_ORDER])
 status_options += extra_statuses
 
+st.sidebar.subheader("Quick status filter")
+
+quick_status = st.sidebar.radio(
+    "Show",
+    ["All"] + [STATUS_LABELS.get(s, s.title()) for s in status_options],
+    index=0
+)
+
+if quick_status == "All":
+    selected_status = status_options
+else:
+    reverse_labels = {v: k for k, v in STATUS_LABELS.items()}
+    selected_status = [reverse_labels.get(quick_status, quick_status.lower())]
+
 brand_options = sorted(df["brand"].dropna().astype(str).unique())
 type_options = sorted(df["type"].dropna().astype(str).unique())
-
-selected_status = st.sidebar.multiselect(
-    "Status / Location",
-    status_options,
-    default=status_options
-)
 
 selected_brand = st.sidebar.multiselect(
     "Brand",
@@ -283,7 +307,7 @@ with c5:
 
 st.divider()
 
-st.subheader("Status / Location")
+st.subheader("Status overview")
 
 status_summary = (
     filtered.groupby("status", dropna=False)
@@ -307,7 +331,7 @@ for i, row in status_summary.iterrows():
 
     with cols[list(status_summary.index).index(i)]:
         st.markdown(f"""
-        <div class="item-card">
+        <div class="status-button-card">
             <span class="status-pill" style="background:{color};">{label}</span>
             <div style="height:12px;"></div>
             <div><b>{int(row["items"])}</b> items</div>
@@ -318,13 +342,25 @@ for i, row in status_summary.iterrows():
 
 st.divider()
 
-st.subheader("Alla plagg")
+st.subheader("Items")
 
 display_df = filtered.copy()
-display_df["status_label"] = display_df["status"].map(STATUS_LABELS).fillna(display_df["status"])
+display_df["status"] = display_df["status"].apply(status_badge)
+display_df["yupoo"] = display_df["yupoo"].apply(lambda x: make_clickable_link(x, "Yupoo"))
+display_df["qc"] = display_df["qc"].apply(lambda x: make_clickable_link(x, "QC"))
+
+display_df["price_yuan"] = display_df["price_yuan"].apply(
+    lambda x: f"¥{x:.0f}" if pd.notna(x) else ""
+)
+display_df["price_sek"] = display_df["price_sek"].apply(
+    lambda x: f"{x:.0f} kr" if pd.notna(x) else ""
+)
+display_df["weight_g"] = display_df["weight_g"].apply(
+    lambda x: f"{x:.0f} g" if pd.notna(x) else ""
+)
 
 show_cols = [
-    "status_label",
+    "status",
     "brand",
     "type",
     "size",
@@ -336,22 +372,12 @@ show_cols = [
     "qc",
 ]
 
-st.dataframe(
-    display_df[show_cols],
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "status_label": "Status / Location",
-        "brand": "Brand",
-        "type": "Type",
-        "size": "Size",
-        "colour": "Colour",
-        "yupoo": st.column_config.LinkColumn("Yupoo"),
-        "qc": st.column_config.LinkColumn("QC"),
-        "price_yuan": st.column_config.NumberColumn("Price ¥", format="¥%.0f"),
-        "price_sek": st.column_config.NumberColumn("Price SEK", format="%.0f kr"),
-        "weight_g": st.column_config.NumberColumn("Weight", format="%.0f g"),
-    }
+st.markdown(
+    display_df[show_cols].to_html(
+        escape=False,
+        index=False
+    ),
+    unsafe_allow_html=True
 )
 
 st.divider()
@@ -359,7 +385,7 @@ st.divider()
 left, right = st.columns(2)
 
 with left:
-    st.subheader("Plagg per märke")
+    st.subheader("Items by brand")
     brand_count = filtered["brand"].value_counts().reset_index()
     brand_count.columns = ["brand", "count"]
 
@@ -376,10 +402,10 @@ with left:
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Ingen data att visa.")
+        st.info("No data to display.")
 
 with right:
-    st.subheader("Statusfördelning")
+    st.subheader("Status distribution")
     status_count = (
         filtered.groupby(["status", "status_rank"])
         .size()
@@ -403,11 +429,11 @@ with right:
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Ingen data att visa.")
+        st.info("No data to display.")
 
 st.divider()
 
-st.subheader("Viktfördelning")
+st.subheader("Weight distribution")
 
 weight_by_status = (
     filtered.groupby(["status", "status_rank"], dropna=False)["weight_g"]
@@ -441,10 +467,10 @@ if not weight_by_status.empty:
 
 st.divider()
 
-st.subheader("Detaljer")
+st.subheader("Details")
 
 if filtered.empty:
-    st.warning("Inga plagg matchar filtret.")
+    st.warning("No items match the selected filters.")
 else:
     labels = (
         filtered["brand"].astype(str)
@@ -456,7 +482,7 @@ else:
         + filtered["status"].map(STATUS_LABELS).fillna(filtered["status"]).astype(str)
     )
 
-    selected_label = st.selectbox("Välj plagg", labels)
+    selected_label = st.selectbox("Select item", labels)
     selected_index = labels[labels == selected_label].index[0]
     item = filtered.loc[selected_index]
 
@@ -485,7 +511,7 @@ else:
         st.write(f"**Weight:** {weight:.0f} g" if pd.notna(weight) else "**Weight:** -")
 
         if str(item.get("yupoo", "")).startswith("http"):
-            st.link_button("Öppna Yupoo", item["yupoo"])
+            st.link_button("Open Yupoo", item["yupoo"])
 
         if str(item.get("qc", "")).startswith("http"):
-            st.link_button("Öppna QC", item["qc"])
+            st.link_button("Open QC", item["qc"])
