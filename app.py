@@ -8,9 +8,6 @@ import streamlit as st
 import plotly.express as px
 
 
-# =========================
-# APP CONFIG
-# =========================
 st.set_page_config(
     page_title="Clothing Orders",
     page_icon="🧥",
@@ -18,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-DATA_PATH = "data/clothes.xlsx"
+DATA_PATH = "data/clothes1.xlsx"
 
 STATUS_ORDER = [
     "purchased",
@@ -29,8 +26,8 @@ STATUS_ORDER = [
 ]
 
 STATUS_COLORS = {
-    "purchased": "#7C3AED",
-    "shipped locally": "#2563EB",
+    "purchased": "#8B5CF6",
+    "shipped locally": "#3B82F6",
     "warehouse": "#F59E0B",
     "shipped internationally": "#06B6D4",
     "delivered": "#22C55E",
@@ -49,22 +46,20 @@ REQUIRED_COLUMNS = [
 ]
 
 
-# =========================
-# STYLING
-# =========================
 st.markdown(
     """
     <style>
     .stApp {
         background:
-            radial-gradient(circle at top left, rgba(80, 80, 120, 0.22), transparent 32%),
-            linear-gradient(180deg, #050505 0%, #0b0b0f 45%, #111114 100%);
+            radial-gradient(circle at top left, rgba(80,80,130,0.28), transparent 30%),
+            radial-gradient(circle at top right, rgba(20,120,180,0.16), transparent 28%),
+            linear-gradient(180deg, #050507 0%, #0b0b10 50%, #111116 100%);
         color: #f5f5f7;
     }
 
     section[data-testid="stSidebar"] {
-        background: rgba(20, 20, 24, 0.72);
-        backdrop-filter: blur(22px);
+        background: rgba(18,18,22,0.78);
+        backdrop-filter: blur(24px);
         border-right: 1px solid rgba(255,255,255,0.08);
     }
 
@@ -73,56 +68,53 @@ st.markdown(
     }
 
     .hero {
-        padding: 28px 30px;
-        border-radius: 32px;
-        background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03));
+        padding: 30px;
+        border-radius: 34px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.13), rgba(255,255,255,0.035));
         border: 1px solid rgba(255,255,255,0.12);
-        box-shadow: 0 25px 80px rgba(0,0,0,0.35);
-        margin-bottom: 24px;
+        box-shadow: 0 30px 90px rgba(0,0,0,0.38);
+        margin-bottom: 26px;
     }
 
     .hero-title {
-        font-size: 44px;
-        font-weight: 800;
-        margin-bottom: 4px;
+        font-size: 46px;
+        font-weight: 850;
+        margin-bottom: 8px;
     }
 
     .hero-subtitle {
         color: rgba(245,245,247,0.68);
-        font-size: 17px;
+        font-size: 16px;
+        line-height: 1.5;
     }
 
     .metric-card {
         padding: 22px;
-        border-radius: 26px;
+        border-radius: 28px;
         background: rgba(255,255,255,0.075);
-        border: 1px solid rgba(255,255,255,0.10);
-        box-shadow: 0 16px 50px rgba(0,0,0,0.24);
+        border: 1px solid rgba(255,255,255,0.105);
+        box-shadow: 0 18px 55px rgba(0,0,0,0.26);
     }
 
     .metric-label {
         color: rgba(245,245,247,0.58);
         font-size: 13px;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
     }
 
     .metric-value {
         font-size: 30px;
-        font-weight: 760;
+        font-weight: 780;
         letter-spacing: -0.04em;
     }
 
-    .status-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        display: inline-block;
-        margin-right: 8px;
-    }
-
-    div[data-testid="stDataFrame"] {
+    .info-box {
+        padding: 18px 20px;
         border-radius: 24px;
-        overflow: hidden;
+        background: rgba(255,255,255,0.065);
+        border: 1px solid rgba(255,255,255,0.09);
+        color: rgba(245,245,247,0.72);
+        margin-bottom: 20px;
     }
 
     .small-muted {
@@ -132,23 +124,43 @@ st.markdown(
 
     .stButton > button {
         width: 100%;
-        border-radius: 18px;
+        min-height: 68px;
+        border-radius: 22px;
         border: 1px solid rgba(255,255,255,0.12);
         background: rgba(255,255,255,0.075);
         color: #f5f5f7;
-        padding: 0.75rem 1rem;
-        font-weight: 650;
+        padding: 0.85rem 1rem;
+        font-weight: 700;
+        transition: all 0.18s ease;
     }
 
     .stButton > button:hover {
-        border-color: rgba(255,255,255,0.35);
-        background: rgba(255,255,255,0.12);
+        border-color: rgba(255,255,255,0.36);
+        background: rgba(255,255,255,0.13);
         color: white;
+        transform: translateY(-1px);
+    }
+
+    div[data-testid="stDataFrame"] {
+        border-radius: 24px;
+        overflow: hidden;
+    }
+
+    div[data-testid="stMetric"] {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.09);
+        padding: 18px;
+        border-radius: 24px;
     }
 
     @media (max-width: 768px) {
         .hero-title {
             font-size: 32px;
+        }
+
+        .hero {
+            padding: 22px;
+            border-radius: 26px;
         }
     }
     </style>
@@ -157,9 +169,6 @@ st.markdown(
 )
 
 
-# =========================
-# HELPERS
-# =========================
 def get_data_source() -> str:
     try:
         if "onedrive_excel_url" in st.secrets:
@@ -228,7 +237,8 @@ def add_calculated_columns(df: pd.DataFrame, rate: float) -> pd.DataFrame:
     df.loc[missing_sek, "sek"] = df.loc[missing_sek, "yuan"] * rate
 
     df["status_rank"] = df["status"].apply(lambda x: STATUS_ORDER.index(x))
-    df = df.sort_values(["status_rank", "brand", "item"]).drop(columns=["status_rank"])
+    df = df.sort_values(["status_rank", "brand", "item"])
+    df = df.drop(columns=["status_rank"])
 
     return df
 
@@ -263,24 +273,19 @@ def clean_link(value: str) -> str:
     return ""
 
 
-# =========================
-# LOAD DATA
-# =========================
 source = get_data_source()
 rate = get_cny_to_sek_rate()
 raw_df = load_data(source)
 df = add_calculated_columns(raw_df, rate)
 
 
-# =========================
-# HEADER
-# =========================
 st.markdown(
     f"""
     <div class="hero">
         <div class="hero-title">Clothing Orders</div>
         <div class="hero-subtitle">
-            Track reps, shipping status, costs, weight, Yupoo links and QC links.
+            Track ordered clothes, shipping status, cost, weight, Yupoo links and QC links.
+            <br>
             Current CNY → SEK rate: <b>{rate:.3f}</b>
         </div>
     </div>
@@ -289,9 +294,6 @@ st.markdown(
 )
 
 
-# =========================
-# SIDEBAR FILTERS
-# =========================
 st.sidebar.title("Filters")
 
 search = st.sidebar.text_input("Search", placeholder="Search item, brand, type...")
@@ -306,47 +308,48 @@ selected_statuses = st.sidebar.multiselect("Status", STATUS_ORDER)
 if "status_card_filter" not in st.session_state:
     st.session_state.status_card_filter = []
 
-if st.sidebar.button("Clear all filters"):
+if st.sidebar.button("Clear status card filter"):
     st.session_state.status_card_filter = []
     st.rerun()
 
+if st.sidebar.button("Refresh data"):
+    st.cache_data.clear()
+    st.rerun()
 
-# =========================
-# CLICKABLE STATUS CARDS
-# =========================
+
 st.subheader("Status overview")
 
 status_cols = st.columns(len(STATUS_ORDER))
 
-for i, status in enumerate(STATUS_ORDER):
-    count = int((df["status"] == status).sum())
-    yuan_sum = float(df.loc[df["status"] == status, "yuan"].sum())
+for index, status in enumerate(STATUS_ORDER):
+    status_df = df[df["status"] == status]
+    count = int(len(status_df))
+    yuan_sum = float(status_df["yuan"].sum())
 
-    with status_cols[i]:
-        label = f"{status.title()}\n\n{count} items · ¥{yuan_sum:,.0f}"
-        if st.button(label, key=f"status_card_{status}"):
+    active_marker = "● " if status in st.session_state.status_card_filter else ""
+
+    with status_cols[index]:
+        button_label = f"{active_marker}{status.title()}\n\n{count} items · ¥{yuan_sum:,.0f}"
+        if st.button(button_label, key=f"status_card_{status}"):
             if status in st.session_state.status_card_filter:
-                st.session_state.status_card_filter.remove(status)
+                st.session_state.status_card_filter = []
             else:
                 st.session_state.status_card_filter = [status]
             st.rerun()
 
 
-# =========================
-# APPLY FILTERS
-# =========================
 filtered = df.copy()
 
 active_statuses = selected_statuses or st.session_state.status_card_filter
 
 if search:
-    mask = (
+    search_mask = (
         filtered["item"].str.contains(search, case=False, na=False)
         | filtered["brand"].str.contains(search, case=False, na=False)
         | filtered["type"].str.contains(search, case=False, na=False)
         | filtered["status"].str.contains(search, case=False, na=False)
     )
-    filtered = filtered[mask]
+    filtered = filtered[search_mask]
 
 if selected_brands:
     filtered = filtered[filtered["brand"].isin(selected_brands)]
@@ -358,37 +361,32 @@ if active_statuses:
     filtered = filtered[filtered["status"].isin(active_statuses)]
 
 
-# =========================
-# METRICS
-# =========================
 st.subheader("Summary")
 
-m1, m2, m3, m4, m5 = st.columns(5)
+metric_1, metric_2, metric_3, metric_4, metric_5 = st.columns(5)
 
-with m1:
+with metric_1:
     render_metric("Total items", f"{len(filtered)}")
 
-with m2:
+with metric_2:
     render_metric("Total yuan", f"¥{filtered['yuan'].sum():,.0f}")
 
-with m3:
+with metric_3:
     render_metric("Total SEK", f"{filtered['sek'].sum():,.0f} kr")
 
-with m4:
+with metric_4:
     render_metric("Total weight", f"{filtered['weight'].sum():,.2f} kg")
 
-with m5:
-    render_metric("Brand count", f"{filtered['brand'].replace('', pd.NA).dropna().nunique()}")
+with metric_5:
+    brand_count = filtered["brand"].replace("", pd.NA).dropna().nunique()
+    render_metric("Brand count", f"{brand_count}")
 
 
-# =========================
-# CHARTS
-# =========================
 st.subheader("Charts")
 
-chart_col1, chart_col2 = st.columns(2)
+chart_col_1, chart_col_2 = st.columns(2)
 
-with chart_col1:
+with chart_col_1:
     brand_data = (
         filtered[filtered["brand"].str.strip() != ""]
         .groupby("brand", as_index=False)
@@ -409,22 +407,25 @@ with chart_col1:
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font_color="#f5f5f7",
+            margin=dict(l=20, r=20, t=60, b=20),
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No brand data available.")
 
-with chart_col2:
+with chart_col_2:
     status_data = (
         filtered.groupby("status", as_index=False)
         .size()
         .rename(columns={"size": "count"})
     )
+
     status_data["status"] = pd.Categorical(
         status_data["status"],
         categories=STATUS_ORDER,
         ordered=True,
     )
+
     status_data = status_data.sort_values("status")
 
     if not status_data.empty:
@@ -442,13 +443,14 @@ with chart_col2:
             plot_bgcolor="rgba(0,0,0,0)",
             font_color="#f5f5f7",
             showlegend=False,
+            margin=dict(l=20, r=20, t=60, b=20),
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No status data available.")
 
-weight_data = filtered.copy()
-weight_data = weight_data[weight_data["weight"] > 0]
+
+weight_data = filtered[filtered["weight"] > 0].copy()
 
 if not weight_data.empty:
     fig = px.bar(
@@ -464,17 +466,14 @@ if not weight_data.empty:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font_color="#f5f5f7",
+        margin=dict(l=20, r=20, t=60, b=20),
     )
     st.plotly_chart(fig, use_container_width=True)
 
 
-# =========================
-# TABLE
-# =========================
 st.subheader("Orders")
 
 display_df = filtered.copy()
-
 display_df["yupoo"] = display_df["yupoo"].apply(clean_link)
 display_df["qc"] = display_df["qc"].apply(clean_link)
 
@@ -486,10 +485,7 @@ st.dataframe(
         "item": st.column_config.TextColumn("Item"),
         "brand": st.column_config.TextColumn("Brand"),
         "type": st.column_config.TextColumn("Type"),
-        "status": st.column_config.SelectboxColumn(
-            "Status",
-            options=STATUS_ORDER,
-        ),
+        "status": st.column_config.TextColumn("Status"),
         "yuan": st.column_config.NumberColumn("Yuan", format="¥%.0f"),
         "sek": st.column_config.NumberColumn("SEK", format="%.0f kr"),
         "weight": st.column_config.NumberColumn("Weight", format="%.2f kg"),
@@ -499,16 +495,14 @@ st.dataframe(
 )
 
 
-# =========================
-# EDITOR
-# =========================
 st.subheader("Edit data")
 
 st.markdown(
     """
-    <div class="small-muted">
-    Edit your orders here, then download the updated Excel file.
-    Upload it back to GitHub or OneDrive through the browser.
+    <div class="info-box">
+        Edit your Excel file in Excel Online for the cleanest workflow.
+        This editor is useful for quick changes and exporting a new Excel file,
+        but it cannot write directly back to OneDrive without Microsoft API authentication.
     </div>
     """,
     unsafe_allow_html=True,
@@ -520,6 +514,9 @@ edited_df = st.data_editor(
     use_container_width=True,
     hide_index=True,
     column_config={
+        "item": st.column_config.TextColumn("Item"),
+        "brand": st.column_config.TextColumn("Brand"),
+        "type": st.column_config.TextColumn("Type"),
         "status": st.column_config.SelectboxColumn(
             "Status",
             options=STATUS_ORDER,
@@ -538,20 +535,23 @@ excel_bytes = to_excel_bytes(edited_df)
 st.download_button(
     label="Download updated Excel",
     data=excel_bytes,
-    file_name="clothes.xlsx",
+    file_name="clothes1.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 
 
-# =========================
-# DATA SOURCE INFO
-# =========================
 with st.expander("Data source"):
     st.write("Current source:")
     st.code(str(source))
 
-    st.write("For OneDrive read-only mode, add this to Streamlit secrets:")
+    st.write("Add this in Streamlit Secrets:")
     st.code('onedrive_excel_url = "YOUR_ONEDRIVE_DIRECT_DOWNLOAD_LINK"')
 
-    st.write("Last refreshed:")
+    st.write("Expected Excel file name:")
+    st.code("clothes1.xlsx")
+
+    st.write("Required columns:")
+    st.code(", ".join(REQUIRED_COLUMNS))
+
+    st.write("Last refresh:")
     st.code(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
