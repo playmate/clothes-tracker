@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
-from pathlib import Path
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(
     page_title="Clothes Tracker",
@@ -10,7 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
-DATA_PATH = Path("data/clothes.xlsx")
+SHEET_TAB = "clothes"
 
 STATUS_ORDER = [
     "purchased",
@@ -35,6 +36,19 @@ STATUS_LABELS = {
     "shipped internationally": "Shipped internationally",
     "delivered": "Delivered",
 }
+
+COLUMNS = [
+    "status",
+    "yupoo",
+    "pic",
+    "brand",
+    "type",
+    "size",
+    "colour",
+    "price_yuan",
+    "weight_g",
+    "qc",
+]
 
 st.markdown("""
 <style>
@@ -139,6 +153,27 @@ a {
 """, unsafe_allow_html=True)
 
 
+@st.cache_resource
+def get_worksheet():
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scope
+    )
+
+    client = gspread.authorize(creds)
+    sheet_name = st.secrets["GOOGLE_SHEET_NAME"]
+
+    spreadsheet = client.open(sheet_name)
+    worksheet = spreadsheet.worksheet(SHEET_TAB)
+
+    return worksheet
+
+
 @st.cache_data(ttl=86400)
 def get_cny_to_sek_rate():
     try:
@@ -146,21 +181,12 @@ def get_cny_to_sek_rate():
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
-        rate = float(data["rates"]["SEK"])
-        date = data.get("date", "latest")
-        return rate, date
+        return float(data["rates"]["SEK"]), data.get("date", "latest")
     except Exception:
         return 1.45, "fallback"
 
 
-@st.cache_data
-def load_data():
-    if not DATA_PATH.exists():
-        st.error("Could not find file: data/clothes.xlsx")
-        st.stop()
-
-    df = pd.read_excel(DATA_PATH)
-
+def normalize_data(df):
     df.columns = (
         df.columns.astype(str)
         .str.strip()
@@ -174,17 +200,16 @@ def load_data():
         "color": "colour",
         "weight": "weight_g",
         "weight_in_wh": "weight_g",
+        "price_yuan": "price_yuan",
     })
 
-    for col in [
-        "status", "brand", "type", "size", "colour",
-        "price_yuan", "weight_g", "yupoo", "qc", "pic"
-    ]:
+    for col in COLUMNS:
         if col not in df.columns:
             df[col] = ""
 
-    df["status"] = df["status"].astype(str).str.strip().str.lower()
+    df = df[COLUMNS].copy()
 
+    df["status"] = df["status"].astype(str).str.strip().str.lower()
     df["status"] = df["status"].replace({
         "shipped": "shipped internationally",
         "international": "shipped internationally",
@@ -216,9 +241,43 @@ def load_data():
         lambda x: STATUS_ORDER.index(x) if x in STATUS_ORDER else 999
     )
 
-    df = df.sort_values(["status_rank", "brand", "type"]).reset_index(drop=True)
+    return df.sort_values(["status_rank", "brand", "type"]).reset_index(drop=True)
 
-    return df
+
+@st.cache_data(ttl=60)
+def load_data():
+    worksheet = get_worksheet()
+    rows = worksheet.get_all_records()
+
+    if not rows:
+        return normalize_data(pd.DataFrame(columns=COLUMNS))
+
+    return normalize_data(pd.DataFrame(rows))
+
+
+def append_item(item):
+    worksheet = get_worksheet()
+
+    existing_headers = worksheet.row_values(1)
+
+    if existing_headers != COLUMNS:
+        worksheet.clear()
+        worksheet.append_row(COLUMNS)
+
+    worksheet.append_row([
+        item.get("status", ""),
+        item.get("yupoo", ""),
+        item.get("pic", ""),
+        item.get("brand", ""),
+        item.get("type", ""),
+        item.get("size", ""),
+        item.get("colour", ""),
+        item.get("price_yuan", ""),
+        item.get("weight_g", ""),
+        item.get("qc", ""),
+    ])
+
+    st.cache_data.clear()
 
 
 def status_badge(status):
@@ -233,8 +292,8 @@ def make_clickable_link(url, label):
     return ""
 
 
-df = load_data()
 cny_to_sek, rate_date = get_cny_to_sek_rate()
+df = load_data()
 df["price_sek"] = df["price_yuan"] * cny_to_sek
 
 st.markdown(f"""
@@ -244,6 +303,48 @@ st.markdown(f"""
     <p class="small-muted">CNY → SEK rate: {cny_to_sek:.4f} · Date: {rate_date}</p>
 </div>
 """, unsafe_allow_html=True)
+
+with st.expander("➕ Add new item", expanded=False):
+    with st.form("add_item_form", clear_on_submit=True):
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+            new_status = st.selectbox("Status", STATUS_ORDER)
+            new_brand = st.text_input("Brand")
+            new_type = st.text_input("Type")
+
+        with c2:
+            new_size = st.text_input("Size")
+            new_colour = st.text_input("Colour")
+            new_price = st.number_input("Price yuan", min_value=0.0, step=1.0)
+
+        with c3:
+            new_weight = st.number_input("Weight g", min_value=0.0, step=10.0)
+            new_yupoo = st.text_input("Yupoo link")
+            new_qc = st.text_input("QC link")
+
+        new_pic = st.text_input("Image link / filename", placeholder="Optional")
+
+        submitted = st.form_submit_button("Save item")
+
+        if submitted:
+            if not new_brand or not new_type:
+                st.error("Brand and Type are required.")
+            else:
+                append_item({
+                    "status": new_status,
+                    "yupoo": new_yupoo,
+                    "pic": new_pic,
+                    "brand": new_brand.strip().lower(),
+                    "type": new_type.strip().lower(),
+                    "size": new_size.strip(),
+                    "colour": new_colour.strip().lower(),
+                    "price_yuan": new_price,
+                    "weight_g": new_weight,
+                    "qc": new_qc,
+                })
+                st.success("Item saved.")
+                st.rerun()
 
 st.sidebar.header("Filters")
 
