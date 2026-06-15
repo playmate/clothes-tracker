@@ -13,6 +13,7 @@ DATA_PATH = Path("data/clothes.xlsx")
 
 st.title("📦 Clothes Tracker")
 
+
 @st.cache_data
 def load_data():
     if not DATA_PATH.exists():
@@ -33,15 +34,9 @@ def load_data():
 
     df = df.rename(columns={
         "color": "colour",
-        "price_yuan": "price_yuan",
-        "price_yuan_": "price_yuan",
-        "price_yuan": "price_yuan",
         "weight": "weight_g",
         "weight_in_wh": "weight_g",
     })
-
-    if "price_yuan" not in df.columns and "price_yuan" in df.columns:
-        df["price_yuan"] = df["price_yuan"]
 
     if "price_yuan" in df.columns:
         df["price_yuan"] = (
@@ -85,6 +80,20 @@ for col in [
     if col not in df.columns:
         df[col] = ""
 
+df["status"] = df["status"].astype(str).str.strip().str.lower()
+
+status_map = {
+    "shipped": "shipped internationally",
+    "shipped internationally": "shipped internationally",
+    "shipped locally": "shipped locally",
+    "warehouse": "warehouse",
+    "purchased": "purchased",
+    "delivered": "delivered",
+    "returned": "returned",
+}
+
+df["status"] = df["status"].replace(status_map)
+
 st.sidebar.header("Filter")
 
 cny_to_sek = st.sidebar.number_input(
@@ -103,7 +112,7 @@ brand_options = sorted(df["brand"].dropna().astype(str).unique())
 type_options = sorted(df["type"].dropna().astype(str).unique())
 
 selected_status = st.sidebar.multiselect(
-    "Status",
+    "Status / Location",
     status_options,
     default=status_options
 )
@@ -145,6 +154,29 @@ col5.metric("Brands", filtered["brand"].nunique())
 
 st.divider()
 
+st.subheader("Vikt per status / location")
+
+weight_by_status = (
+    filtered
+    .groupby("status", dropna=False)["weight_g"]
+    .sum()
+    .reset_index()
+    .sort_values("weight_g", ascending=False)
+)
+
+if weight_by_status.empty or weight_by_status["weight_g"].sum(skipna=True) == 0:
+    st.info("Ingen viktdata att visa.")
+else:
+    weight_cols = st.columns(len(weight_by_status))
+
+    for i, row in weight_by_status.iterrows():
+        weight_cols[list(weight_by_status.index).index(i)].metric(
+            row["status"],
+            f"{row['weight_g'] / 1000:.2f} kg"
+        )
+
+st.divider()
+
 st.subheader("Alla plagg")
 
 show_cols = [
@@ -165,7 +197,7 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "status": "Status",
+        "status": "Status / Location",
         "brand": "Brand",
         "type": "Type",
         "size": "Size",
@@ -200,7 +232,7 @@ with left:
         st.info("Ingen data att visa.")
 
 with right:
-    st.subheader("Status")
+    st.subheader("Status / Location")
 
     status_count = filtered["status"].value_counts().reset_index()
     status_count.columns = ["status", "count"]
@@ -214,6 +246,23 @@ with right:
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Ingen data att visa.")
+
+st.divider()
+
+st.subheader("Viktfördelning")
+
+if not weight_by_status.empty:
+    fig_weight = px.bar(
+        weight_by_status,
+        x="status",
+        y="weight_g",
+        text="weight_g",
+        labels={
+            "status": "Status / Location",
+            "weight_g": "Weight g"
+        }
+    )
+    st.plotly_chart(fig_weight, use_container_width=True)
 
 st.divider()
 
@@ -241,7 +290,7 @@ else:
     c1, c2 = st.columns(2)
 
     with c1:
-        st.write(f"**Status:** {item['status']}")
+        st.write(f"**Status / Location:** {item['status']}")
         st.write(f"**Brand:** {item['brand']}")
         st.write(f"**Type:** {item['type']}")
         st.write(f"**Size:** {item['size']}")
